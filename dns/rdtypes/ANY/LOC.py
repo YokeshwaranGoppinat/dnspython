@@ -103,6 +103,20 @@ def _decode_size(what, desc):
     return base * pow(10, exponent)
 
 
+def _is_valid_meters(whole, fraction):
+    """Are *whole* and *fraction*, the parts of a meters value before and after
+    the decimal point, a valid value with at most two decimal places?"""
+    if whole == "" and fraction == "":
+        return False
+    if whole != "" and not dns._text_util.is_ascii_digits(whole):
+        return False
+    if fraction != "" and (
+        len(fraction) > 2 or not dns._text_util.is_ascii_digits(fraction)
+    ):
+        return False
+    return True
+
+
 def _text_to_cm(what, desc, negative_ok=False):
     # RFC 1876 section 3: a value in meters with at most two decimal places,
     # optionally followed by "m", e.g. "42849672.95m".  Convert it to an integer
@@ -118,14 +132,7 @@ def _text_to_cm(what, desc, negative_ok=False):
         negative = True
         text = text[1:]
     whole, _, fraction = text.partition(".")
-    if (
-        (whole == "" and fraction == "")
-        or (whole != "" and not dns._text_util.is_ascii_digits(whole))
-        or (
-            fraction != ""
-            and (len(fraction) > 2 or not dns._text_util.is_ascii_digits(fraction))
-        )
-    ):
+    if not _is_valid_meters(whole, fraction):
         raise dns.exception.SyntaxError(f"bad {desc} value")
     value = int(whole or "0") * 100 + int(fraction.ljust(2, "0"))
     if negative:
