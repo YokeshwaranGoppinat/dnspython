@@ -25,7 +25,7 @@ class GenericPublicKey(ABC):
         """Encode key as bytes for DNSKEY"""
 
     @classmethod
-    def _ensure_algorithm_key_combination(cls, key: DNSKEY) -> None:
+    def _check_dnskey_algorithm(cls, key: DNSKEY) -> None:
         if key.algorithm != cls.algorithm:
             raise AlgorithmKeyMismatch
 

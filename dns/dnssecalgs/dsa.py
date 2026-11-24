@@ -46,7 +46,7 @@ class PublicDSA(CryptographyPublicKey):
 
     @classmethod
     def from_dnskey(cls, key: DNSKEY) -> Self:
-        cls._ensure_algorithm_key_combination(key)
+        cls._check_dnskey_algorithm(key)
         keyptr = key.key
         if len(keyptr) < 1:
             raise ValueError("key material is empty")

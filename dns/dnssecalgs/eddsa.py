@@ -20,7 +20,7 @@ class PublicEDDSA(CryptographyPublicKey):
 
     @classmethod
     def from_dnskey(cls, key: DNSKEY) -> Self:
-        cls._ensure_algorithm_key_combination(key)
+        cls._check_dnskey_algorithm(key)
         return cls(
             key=cls.key_cls.from_public_bytes(key.key),
         )
