@@ -169,10 +169,7 @@ class AsyncioQuicConnection(AsyncQuicConnection):
                     if isinstance(h3_event, aioquic.h3.events.HeadersReceived):
                         stream = self._streams.get(h3_event.stream_id)
                         if stream:
-                            if stream._headers is None:
-                                stream._headers = h3_event.headers
-                            elif stream._trailers is None:
-                                stream._trailers = h3_event.headers
+                            stream._add_headers(h3_event.headers)
                             if h3_event.stream_ended:
                                 await stream._add_input(b"", True)
                     elif isinstance(h3_event, aioquic.h3.events.DataReceived):

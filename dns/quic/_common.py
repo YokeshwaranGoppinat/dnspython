@@ -81,6 +81,17 @@ class BaseQuicStream:
     def trailers(self):
         return self._trailers
 
+    def _add_headers(self, headers):
+        """Record a received HEADERS frame.
+
+        The first one is the response headers and the second one, if any, is
+        the trailers.  Any later ones are ignored.
+        """
+        if self._headers is None:
+            self._headers = headers
+        elif self._trailers is None:
+            self._trailers = headers
+
     def _expiration_from_timeout(self, timeout):
         if timeout is not None:
             expiration = time.time() + timeout

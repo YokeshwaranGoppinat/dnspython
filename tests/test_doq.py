@@ -203,3 +203,20 @@ def test_h3_stream_reset(backend):
     # The reset reaches the H3 connection, and ends the stream.
     connection._h3_conn.handle_event.assert_called_once_with(reset)
     assert connection._streams[0]._buffer.seen_end()
+
+
+@pytest.mark.skipif(not dns._features.have("doq"), reason="requires aioquic")
+def test_stream_add_headers():
+    from dns.quic._common import BaseQuicStream
+
+    stream = BaseQuicStream(None, 0)
+    assert stream.headers() is None and stream.trailers() is None
+    stream._add_headers([(b":status", b"200")])
+    assert stream.headers() == [(b":status", b"200")]
+    assert stream.trailers() is None
+    stream._add_headers([(b"x-trailer", b"1")])
+    assert stream.trailers() == [(b"x-trailer", b"1")]
+    # Any further HEADERS frames are ignored.
+    stream._add_headers([(b"x-extra", b"2")])
+    assert stream.headers() == [(b":status", b"200")]
+    assert stream.trailers() == [(b"x-trailer", b"1")]
