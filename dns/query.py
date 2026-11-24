@@ -428,6 +428,20 @@ class HTTPVersion(enum.IntEnum):
     H3 = 3
 
 
+def _make_doh_url(where: str, af: int | None, port: int, path: str) -> str:
+    """Return the DNS-over-HTTPS URL for *where*.
+
+    If *where* is an IP address, the URL is built from it, *port* and *path*;
+    otherwise *where* is assumed to already be a URL and is returned unchanged.
+    """
+    if af is not None and dns.inet.is_address(where):
+        if af == socket.AF_INET:
+            return f"https://{where}:{port}{path}"
+        elif af == socket.AF_INET6:
+            return f"https://[{where}]:{port}{path}"
+    return where
+
+
 def https(
     q: dns.message.Message,
     where: str,
@@ -501,13 +515,7 @@ def https(
     if verify_filename is not None:
         verify = verify_filename
     af, _, the_source = _destination_and_source(where, port, source, source_port, False)
-    # we bind url and then override as pyright can't figure out all paths bind.
-    url = where
-    if af is not None and dns.inet.is_address(where):
-        if af == socket.AF_INET:
-            url = f"https://{where}:{port}{path}"
-        elif af == socket.AF_INET6:
-            url = f"https://[{where}]:{port}{path}"
+    url = _make_doh_url(where, af, port, path)
 
     extensions = {}
     if bootstrap_address is None:

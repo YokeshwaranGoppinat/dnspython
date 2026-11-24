@@ -309,6 +309,20 @@ class DestinationAndSourceTests(unittest.TestCase):
         self.assertEqual(s, ("::", 12345, 0, 0))
 
 
+class MakeDoHURLTestCase(unittest.TestCase):
+    def test_ipv4_address(self):
+        url = dns.query._make_doh_url("1.2.3.4", socket.AF_INET, 443, "/dns-query")
+        self.assertEqual(url, "https://1.2.3.4:443/dns-query")
+
+    def test_ipv6_address(self):
+        url = dns.query._make_doh_url("2001:db8::1", socket.AF_INET6, 8443, "/q")
+        self.assertEqual(url, "https://[2001:db8::1]:8443/q")
+
+    def test_url_unchanged(self):
+        where = "https://dns.example/dns-query"
+        self.assertEqual(dns.query._make_doh_url(where, None, 443, "/x"), where)
+
+
 class AddressesEqualTestCase(unittest.TestCase):
     def test_v4(self):
         self.assertTrue(

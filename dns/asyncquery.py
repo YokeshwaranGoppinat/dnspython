@@ -47,6 +47,7 @@ from dns.query import (
     UDPMode,
     _check_status,
     _compute_times,
+    _make_doh_url,
     _matches_destination,
     _remaining,
     have_doh,
@@ -566,13 +567,7 @@ async def https(
         af = dns.inet.af_for_address(where)
     except ValueError:
         af = None
-    # we bind url and then override as pyright can't figure out all paths bind.
-    url = where
-    if af is not None and dns.inet.is_address(where):
-        if af == socket.AF_INET:
-            url = f"https://{where}:{port}{path}"
-        elif af == socket.AF_INET6:
-            url = f"https://[{where}]:{port}{path}"
+    url = _make_doh_url(where, af, port, path)
 
     extensions = {}
     if bootstrap_address is None:
