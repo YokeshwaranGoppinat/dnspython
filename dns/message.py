@@ -326,11 +326,12 @@ class Message:
         :rtype: bool
         """
 
-        if (
-            other.flags & dns.flags.QR == 0
-            or self.id != other.id
-            or dns.opcode.from_flags(self.flags) != dns.opcode.from_flags(other.flags)
-        ):
+        other_is_reply = (other.flags & dns.flags.QR) != 0
+        ids_match = self.id == other.id
+        opcodes_match = dns.opcode.from_flags(self.flags) == dns.opcode.from_flags(
+            other.flags
+        )
+        if not (other_is_reply and ids_match and opcodes_match):
             return False
         if other.rcode() in {
             dns.rcode.FORMERR,
@@ -349,12 +350,11 @@ class Message:
             # case, which is that all the sections are returned and
             # identical.
             return True
-        if (
-            xfr_continuation
-            and len(other.question) == 0
-            and len(self.question) == 1
-            and self.question[0].rdtype in {dns.rdatatype.AXFR, dns.rdatatype.IXFR}
-        ):
+        is_xfr_query = len(self.question) == 1 and self.question[0].rdtype in {
+            dns.rdatatype.AXFR,
+            dns.rdatatype.IXFR,
+        }
+        if xfr_continuation and len(other.question) == 0 and is_xfr_query:
             return True
         # Compare the questions with absolute names, as a message read with
         # an origin (e.g. a zone transfer response) has relativized names.
