@@ -32,6 +32,111 @@ import dns.tokenizer
 import dns.wire
 
 
+class _GatewayKind:
+    """The behaviour of one gateway type, as used by :py:class:`Gateway`."""
+
+    def check(self, gateway: Any, name: str) -> str | dns.name.Name | None:
+        """Check *gateway* and return the value to store."""
+        raise NotImplementedError  # pragma: no cover
+
+    def to_styled_text(self, gateway: Any, style: dns.rdata.RdataStyle) -> str:
+        raise NotImplementedError  # pragma: no cover
+
+    def from_text(
+        self, tok, origin=None, relativize=True, relativize_to=None
+    ) -> str | dns.name.Name:
+        return tok.get_string()
+
+    def to_wire(self, gateway: Any, file, origin=None) -> None:
+        raise NotImplementedError  # pragma: no cover
+
+    def from_wire_parser(self, parser, origin=None) -> str | dns.name.Name | None:
+        raise NotImplementedError  # pragma: no cover
+
+
+class _NoGateway(_GatewayKind):
+    """Gateway type 0: no gateway."""
+
+    def check(self, gateway, name):
+        if gateway not in (".", None):
+            raise SyntaxError(f"invalid {name} for type 0")
+        return None
+
+    def to_styled_text(self, gateway, style):
+        return "."
+
+    def to_wire(self, gateway, file, origin=None):
+        pass
+
+    def from_wire_parser(self, parser, origin=None):
+        return None
+
+
+class _IPv4Gateway(_GatewayKind):
+    """Gateway type 1: an IPv4 address."""
+
+    def check(self, gateway, name):
+        assert isinstance(gateway, str)
+        dns.ipv4.inet_aton(gateway)
+        return gateway
+
+    def to_styled_text(self, gateway, style):
+        return gateway
+
+    def to_wire(self, gateway, file, origin=None):
+        file.write(dns.ipv4.inet_aton(gateway))
+
+    def from_wire_parser(self, parser, origin=None):
+        return dns.ipv4.inet_ntoa(parser.get_bytes(4))
+
+
+class _IPv6Gateway(_GatewayKind):
+    """Gateway type 2: an IPv6 address."""
+
+    def check(self, gateway, name):
+        assert isinstance(gateway, str)
+        dns.ipv6.inet_aton(gateway)
+        return gateway
+
+    def to_styled_text(self, gateway, style):
+        return gateway
+
+    def to_wire(self, gateway, file, origin=None):
+        file.write(dns.ipv6.inet_aton(gateway))
+
+    def from_wire_parser(self, parser, origin=None):
+        return dns.ipv6.inet_ntoa(parser.get_bytes(16))
+
+
+class _NameGateway(_GatewayKind):
+    """Gateway type 3: a domain name."""
+
+    def check(self, gateway, name):
+        if not isinstance(gateway, dns.name.Name):
+            raise SyntaxError(f"invalid {name}; not a name")
+        return gateway
+
+    def to_styled_text(self, gateway, style):
+        return gateway.to_styled_text(style)
+
+    def from_text(self, tok, origin=None, relativize=True, relativize_to=None):
+        return tok.get_name(origin, relativize, relativize_to)
+
+    def to_wire(self, gateway, file, origin=None):
+        gateway.to_wire(file, None, origin, False)
+
+    def from_wire_parser(self, parser, origin=None):
+        return parser.get_name(origin)
+
+
+_GATEWAY_KINDS: dict[int, _GatewayKind] = {
+    0: _NoGateway(),
+    1: _IPv4Gateway(),
+    2: _IPv6Gateway(),
+    3: _NameGateway(),
+}
+
+
 class Gateway:
     """A helper class for the IPSECKEY gateway and AMTRELAY relay fields"""
 
@@ -46,24 +151,17 @@ class Gateway:
     def _invalid_type(cls, gateway_type):
         return f"invalid {cls.name} type: {gateway_type}"
 
+    @property
+    def _kind(self) -> _GatewayKind:
+        kind = _GATEWAY_KINDS.get(self.type)
+        if kind is None:
+            raise ValueError(self._invalid_type(self.type))  # pragma: no cover
+        return kind
+
     def _check(self):
-        if self.type == 0:
-            if self.gateway not in (".", None):
-                raise SyntaxError(f"invalid {self.name} for type 0")
-            self.gateway = None
-        elif self.type == 1:
-            # check that it's OK
-            assert isinstance(self.gateway, str)
-            dns.ipv4.inet_aton(self.gateway)
-        elif self.type == 2:
-            # check that it's OK
-            assert isinstance(self.gateway, str)
-            dns.ipv6.inet_aton(self.gateway)
-        elif self.type == 3:
-            if not isinstance(self.gateway, dns.name.Name):
-                raise SyntaxError(f"invalid {self.name}; not a name")
-        else:
+        if self.type not in _GATEWAY_KINDS:
             raise SyntaxError(self._invalid_type(self.type))
+        self.gateway = self._kind.check(self.gateway, self.name)
 
     def to_text(self, origin=None, relativize=True) -> str:
         return self.to_styled_text(
@@ -71,61 +169,32 @@ class Gateway:
         )
 
     def to_styled_text(self, style: dns.rdata.RdataStyle) -> str:
-        if self.type == 0:
-            return "."
-        elif self.type in (1, 2):
-            assert isinstance(self.gateway, str)
-            return self.gateway
-        elif self.type == 3:
-            assert isinstance(self.gateway, dns.name.Name)
-            return self.gateway.to_styled_text(style)
-        else:
-            raise ValueError(self._invalid_type(self.type))  # pragma: no cover
+        return self._kind.to_styled_text(self.gateway, style)
 
     @classmethod
     def from_text(
         cls, gateway_type, tok, origin=None, relativize=True, relativize_to=None
     ):
-        if gateway_type in (0, 1, 2):
-            gateway = tok.get_string()
-        elif gateway_type == 3:
-            gateway = tok.get_name(origin, relativize, relativize_to)
-        else:
+        kind = _GATEWAY_KINDS.get(gateway_type)
+        if kind is None:
             raise dns.exception.SyntaxError(
                 cls._invalid_type(gateway_type)
             )  # pragma: no cover
+        gateway = kind.from_text(tok, origin, relativize, relativize_to)
         return cls(gateway_type, gateway)
 
     # pylint: disable=unused-argument
     def to_wire(self, file, compress=None, origin=None, canonicalize=False):
-        if self.type == 0:
-            pass
-        elif self.type == 1:
-            assert isinstance(self.gateway, str)
-            file.write(dns.ipv4.inet_aton(self.gateway))
-        elif self.type == 2:
-            assert isinstance(self.gateway, str)
-            file.write(dns.ipv6.inet_aton(self.gateway))
-        elif self.type == 3:
-            assert isinstance(self.gateway, dns.name.Name)
-            self.gateway.to_wire(file, None, origin, False)
-        else:
-            raise ValueError(self._invalid_type(self.type))  # pragma: no cover
+        self._kind.to_wire(self.gateway, file, origin)
 
     # pylint: enable=unused-argument
 
     @classmethod
     def from_wire_parser(cls, gateway_type, parser, origin=None):
-        if gateway_type == 0:
-            gateway = None
-        elif gateway_type == 1:
-            gateway = dns.ipv4.inet_ntoa(parser.get_bytes(4))
-        elif gateway_type == 2:
-            gateway = dns.ipv6.inet_ntoa(parser.get_bytes(16))
-        elif gateway_type == 3:
-            gateway = parser.get_name(origin)
-        else:
+        kind = _GATEWAY_KINDS.get(gateway_type)
+        if kind is None:
             raise dns.exception.FormError(cls._invalid_type(gateway_type))
+        gateway = kind.from_wire_parser(parser, origin)
         return cls(gateway_type, gateway)
 
 
